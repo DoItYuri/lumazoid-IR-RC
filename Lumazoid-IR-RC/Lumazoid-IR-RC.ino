@@ -1,75 +1,115 @@
 /*
-  Lumazoid realtime music visualizer board firmware
-  Copyright (C) 2015 Michael Krumpus, nootropic design, LLC
+ * Changes from the original Lumazoid project are:
+ * - input from microphone module MAX9814 to A1
+ * - IR remote control is added
+ * - number of LEDs is variable and may be any (210 is max due to Nano V3.0 memory limit)
+ * - all buttons and potentiometers are removed (IR RC is the only)
+ * - new modes were added
+ * - Lamp mode
+ *
+ * IR remote control CMD (21 buttons):
+ *   on/off  0x45   on/off
+ *   stop    0x46   (not used)
+ *   mute    0x47   on/off lamp mode
+ *   mode    0x44   next  mode
+ *   back    0x40   next color mode
+ *   eq      0x43   change freqencies
+ *   bward   0x07   reduce PARAMETER (colors change speed)
+ *   fward   0x15   increase PARAMETER (colors change speed)
+ *   play    0x09   randomized mode
+ *   vol-    0x16   reduce BRIGHTNESS
+ *   vol+    0x19   increase BRIGHTNESS
+ *   0       0x0d   mode 0
+ *   1       0x0c   mode 1
+ *   2       0x18   mode 2
+ *   3       0x5e   mode 3
+ *   4       0x08   mode 4
+ *   5       0x1c   mode 5
+ *   6       0x5a   mode 6
+ *   7       0x42   mode 7
+ *   8       0x52   mode 8
+ *   9       0x4a   mode 9
+ */
 
-  This program is free software: you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation, either version 3 of the License, or
-  (at your option) any later version.
-
-  This program is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
-
-  You should have received a copy of the GNU General Public License
-  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
-#include "Lumazoid.h"
+#include "Lumazoid-IR-RC.h"
 #include <Adafruit_NeoPixel.h>
 #include <avr/pgmspace.h>
 #include <EEPROM.h>
 #include <ffft.h>
 #include <math.h>
+#include "IRLremote.h"
 
 //#define DEBUG
-#define ADC_CHANNEL 0
-#define N_BANDS 8
-#define N_FRAMES 5
-#define N_PEAKS 25
-#define N_MODES 9
-#define PATTERN_DANCE_PARTY 0
-#define PATTERN_SINGLE_DIR_DANCE_PARTY 1
-#define PATTERN_PULSE 2
-#define PATTERN_LIGHT_BAR 3
-#define PATTERN_COLOR_BARS 4
-#define PATTERN_COLOR_BARS2 5
-#define PATTERN_FLASHBULBS 6
-#define PATTERN_FIREFLIES 7
-#define PATTERN_RANDOM 8
-#define COLOR_RANDOM 0
-#define COLOR_CYCLE 1
-#define COLOR_BAND 2
-#define N_COLOR_MODES 3
-#define LEDCONFIG_60 0
-#define LEDCONFIG_120 1
-#define LEDCONFIG_180 2
-#define MAX_COLOR_BARS 22
-#define MAXCOLORINDEX 256
+#define N_LEDS            94 //max 210, Nano has not enough memory to process more
+#define ADC_CHANNEL       1  //A1 - input
+#define BACKGROUND        ((uint32_t) 0x000000) //background color
+#define LAMP_COLOR        ((uint32_t) 0x646464) //light color
+
+#define LED_PIN           13
+#define LED_STRIP_PIN     6
+#define REF_POT_GND       A0
+#define IR_RECEIVE_PIN    2
+
+#define IR_CMD_ON_OFF     0x45
+#define IR_CMD_COLOR_NEXT 0x40
+#define IR_CMD_MODE_NEXT  0x44
+#define IR_CMD_BRIGHT_DEC 0x16
+#define IR_CMD_BRIGHT_INC 0x19
+#define IR_CMD_PARM_DEC   0x07
+#define IR_CMD_PARM_INC   0x15
+#define IR_CMD_MODE_0     0x0d
+#define IR_CMD_MODE_1     0x0c
+#define IR_CMD_MODE_2     0x18
+#define IR_CMD_MODE_3     0x5e
+#define IR_CMD_MODE_4     0x08
+#define IR_CMD_MODE_5     0x1c
+#define IR_CMD_MODE_6     0x5a
+#define IR_CMD_MODE_7     0x42
+#define IR_CMD_MODE_8     0x52
+#define IR_CMD_MODE_9     0x4a
+#define IR_CMD_MODE_RAND  0x09
+#define IR_CMD_EQ         0x43
+#define IR_CMD_LIGHT      0x47
+
+#define N_BANDS           8
+#define N_FRAMES          5
+#define N_PEAKS           25
+
+#define PATTERN_DANCE_PARTY                   0
+#define PATTERN_DANCE_PARTY_MIRROR            1
+#define PATTERN_SINGLE_DIR_DANCE_PARTY        2
+#define PATTERN_SINGLE_DIR_DANCE_PARTY_MIRROR 3
+#define PATTERN_PULSE                         4
+#define PATTERN_LIGHT_BAR                     5
+#define PATTERN_COLOR_BARS                    6
+#define PATTERN_COLOR_BARS2                   7
+#define PATTERN_COLOR_BARS3                   8
+#define PATTERN_FLASHBULBS                    9
+#define PATTERN_FIREFLIES                     10
+#define PATTERN_RANDOM                        11
+#define N_MODES                               12
+#define PATTERN_LAMP                          N_MODES
+
+#define COLOR_RANDOM      0
+#define COLOR_CYCLE       1
+#define COLOR_BAND        2
+#define N_COLOR_MODES     3
+
+#define MAX_COLOR_BARS    22
+#define MAXCOLORINDEX     256
 #define EEPROM_MAGIC_NUMBER 0xbad1 // just a 16 bit number that is not likely to randomly be found in EEPROM.
-#define LED_BRIGHTNESS 25
-#define UNUSED 255
+#define LED_BRIGHTNESS    25
+#define UNUSED            255
 
-#define PATTERN_BUTTON_PIN 2
-#define COLOR_BUTTON_PIN 3
-#define LED_PIN 5
-#define LED_STRIP_PIN 6
-#define PARM_POT 1
+CNec IRLremote;
 
-uint8_t N_LEDS = 120;
-uint8_t MAX_AGE = 0;
-
-#ifndef DEBUG
-Adafruit_NeoPixel strip = Adafruit_NeoPixel(180, LED_STRIP_PIN, NEO_GRB + NEO_KHZ800);
-#else
-Adafruit_NeoPixel strip = Adafruit_NeoPixel(120, LED_STRIP_PIN, NEO_GRB + NEO_KHZ800);
-#endif
+Adafruit_NeoPixel strip = Adafruit_NeoPixel(N_LEDS, LED_STRIP_PIN, NEO_GRB + NEO_KHZ800);
 
 peak_t peaks[N_PEAKS];
 uint8_t peakIndex = 0;
 uint8_t newPeakFlags = 0;
-uint8_t mode = 0;
+uint8_t mode = 0;         //current mode
+uint8_t lastMode = 0;
 uint8_t pattern = 0;
 uint8_t cutoffFreqBand = 2;
 uint8_t colorMode = COLOR_RANDOM;
@@ -78,9 +118,9 @@ uint8_t colorIndex = 0;
 uint8_t randColor[] = {0, 0};
 uint8_t randColorCount[] = {0, 0};
 uint8_t randColorChangeParm = 10;
-uint8_t ledConfig = LEDCONFIG_120;
-uint16_t parm = 1024;
-uint16_t lastParm;
+uint8_t MAX_AGE = 0;
+uint16_t parm = 1000;
+uint16_t lastParm=0;
 uint8_t colorBars[MAX_COLOR_BARS];
 uint16_t loopCounter = 0;
 uint16_t loopCounterMax = 500;
@@ -90,13 +130,16 @@ uint8_t recentPatternIndex = 0;
 uint8_t transitionWaitTime = 0;
 
 // FFT_N = 128
-int16_t       capture[FFT_N];    // Audio capture buffer
-complex_t     bfly_buff[FFT_N];  // FFT "butterfly" buffer
+int16_t       capture[FFT_N];      // Audio capture buffer
+complex_t     bfly_buff[FFT_N];    // FFT "butterfly" buffer
 uint16_t      spectrum[FFT_N / 2]; // Spectrum output buffer
 
-volatile byte samplePos = 0;     // Buffer position counter
+bool off = false;                  //on|off
+volatile byte samplePos = 0;       // Buffer position counter
 byte maxBrightness = 255;
 float brightnessScale = 1.0;
+byte maxLightBrightness = 255;
+float lightBrightnessScale = 1.0;
 
 byte
 bandPeakLevel[8],      // Peak level of each band
@@ -128,9 +171,14 @@ const uint8_t PROGMEM band6weights[] = {1, 4, 11, 25, 49, 83, 121, 156, 180, 185
 const uint8_t PROGMEM band7weights[] = {1, 2, 5, 10, 18, 30, 46, 67, 92, 118, 143, 164, 179, 185, 184, 174, 158, 139, 118, 97, 77, 60, 45, 34, 25, 18, 13, 9, 7, 5, 3, 2, 2, 1, 1, 1, 1};
 const uint8_t PROGMEM * const bandWeights[] = {band0weights, band1weights, band2weights, band3weights, band4weights, band5weights, band6weights, band7weights};
 
-
 void setup() {
-  randomSeed(analogRead(2));
+#ifdef DEBUG
+  Serial.begin(115200);
+  Serial.println(getMemory());
+#endif
+  IRLremote.begin(IR_RECEIVE_PIN);
+  
+  randomSeed(analogRead(3));
   memset(bandPeakLevel, 0, sizeof(bandPeakLevel));
   memset(band, 0, sizeof(band));
 
@@ -157,23 +205,12 @@ void setup() {
     recentPatterns[i] = UNUSED;
   }
 
-  lastParm = 0;
-  parm = analogRead(PARM_POT);
-
   setADCFreeRunning();
   DIDR0  = 1 << ADC_CHANNEL; // Turn off digital input for ADC pin
 
-  pinMode(PATTERN_BUTTON_PIN, INPUT_PULLUP);
-  pinMode(COLOR_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(REF_POT_GND, OUTPUT);
+  digitalWrite(REF_POT_GND, LOW);
   pinMode(LED_PIN, OUTPUT);
-
-  for (i = 0; i < 3; i++) {
-    digitalWrite(LED_PIN, HIGH);
-    delay(50);
-    digitalWrite(LED_PIN, LOW);
-    delay(50);
-  }
-  analogWrite(LED_PIN, LED_BRIGHTNESS);
 
   sei(); // Enable interrupts
 
@@ -182,73 +219,149 @@ void setup() {
 
   // Check to see if the ledConfig (60 LEDs, 120, or 180 LEDs) and mode are stored in EEPROM.
   if (EEPROMValid()) {
-    ledConfig = EEPROM.read(2);
-    if (ledConfig > LEDCONFIG_180) {
-      ledConfig = LEDCONFIG_180;
-    }
-    mode = EEPROM.read(3);
-    if (mode > N_MODES) {
-      mode = 0;
-    }
-    pattern = mode;
-    if (pattern == PATTERN_RANDOM) {
-      randomized = true;
-      pattern = chooseRandomPattern();
-      loopCounter = 0;
-    } else {
-      randomized = false;
-    }
-    maxBrightness = EEPROM.read(4);
-    brightnessScale = maxBrightness / 255.0;
-    colorMode = EEPROM.read(5);
-    if (colorMode > COLOR_BAND) colorMode = COLOR_BAND;
-    cutoffFreqBand = EEPROM.read(6);
-    if (cutoffFreqBand > 7) cutoffFreqBand = 2;
-  } else {
-    test(); // run diagnostics on first time startup
-    // EEPROM not written, so default to 120 LEDs and mode 0.
-    ledConfig = LEDCONFIG_120;
-    mode = 0;
+    readConfig();
+  } 
+  else { //init by default
+    mode = PATTERN_RANDOM;
     maxBrightness = 255;
+    maxLightBrightness = 255;
     colorMode = COLOR_RANDOM;
-    cutoffFreqBand = 2;
+    cutoffFreqBand = 7;
+    parm = 1023;
     saveConfig();
   }
-
-  configure();
-
-  setConfig();
   setParameters();
+}
 
-  TIMSK0 = 0;                // Timer0 off
+void blinkLed(int times){
+  for (int i = 0; i < times; i++) {
+    digitalWrite(LED_PIN, HIGH);
+    delay(50);
+    digitalWrite(LED_PIN, LOW);
+    delay(50);
+  }
+}
 
-#ifdef DEBUG
-  Serial.begin(115200);
-  Serial.println(getMemory());
-#endif
+void ir_loop_off(){
+  if (IRLremote.available()) {
+    bool ok = true;
+    int delaySize = 300; //задержка, чтобы лучше разглядеть индикаторы на ленте
+    // Get the new data from the remote
+    auto data = IRLremote.read();
+    if(data.command != 0){ //process the received code
+      switch(data.command){
+        case IR_CMD_ON_OFF:
+          off = false;
+          blinkLed(5);
+          break;
+      }
+      delay(delaySize);
+    }
+  }
+}
+
+void ir_loop(){
+  if (IRLremote.available()) {
+    bool ok = true;
+    int delaySize = 300; //delay, to see the indication on the strip
+    // Get the new data from the remote
+    auto data = IRLremote.read();
+    if(data.command != 0){ //process the received code
+      switch(data.command){
+        case IR_CMD_ON_OFF:
+          off = true;
+          strip.clear();
+          break;
+        case IR_CMD_COLOR_NEXT:
+          ok = changeColor(1);
+          break;
+        case IR_CMD_MODE_NEXT:
+          ok = changeMode(1);
+          break;
+        case IR_CMD_BRIGHT_DEC:
+          ok = (pattern == PATTERN_LAMP) ? changeLampBrightness(-1) : changeBrightness(-1);
+          delaySize = 0; //no delay needed
+          break;
+        case IR_CMD_BRIGHT_INC:
+          ok = (pattern == PATTERN_LAMP) ? changeLampBrightness(1) : changeBrightness(1);
+          delaySize = 0; //no delay needed
+          break;
+        case IR_CMD_PARM_DEC:
+          ok = changeParm(-1);
+          delaySize = 0; //no delay needed
+          break;
+        case IR_CMD_PARM_INC:
+          ok = changeParm(1);
+          delaySize = 0; //no delay needed
+          break;
+        case IR_CMD_MODE_0:
+          setMode(PATTERN_PULSE);
+          break;
+        case IR_CMD_MODE_1:
+          setMode(PATTERN_DANCE_PARTY);
+          break;
+        case IR_CMD_MODE_2:
+          setMode(PATTERN_FIREFLIES);
+          break;
+        case IR_CMD_MODE_3:
+          setMode(PATTERN_DANCE_PARTY_MIRROR);
+          break;
+        case IR_CMD_MODE_4:
+          setMode(PATTERN_SINGLE_DIR_DANCE_PARTY);
+          break;
+        case IR_CMD_MODE_5:
+          setMode(PATTERN_FLASHBULBS);
+          break;
+        case IR_CMD_MODE_6:
+          setMode(PATTERN_SINGLE_DIR_DANCE_PARTY_MIRROR);
+          break;
+        case IR_CMD_MODE_7:
+          setMode(PATTERN_COLOR_BARS);
+          break;
+        case IR_CMD_MODE_8:
+          setMode(PATTERN_COLOR_BARS2);
+          break;
+        case IR_CMD_MODE_9:
+          setMode(PATTERN_COLOR_BARS3);
+          break;
+        case IR_CMD_MODE_RAND:
+          setMode(PATTERN_RANDOM);
+          break;
+        case IR_CMD_EQ:
+          changeFreqCutMode(1);
+          break;
+        case IR_CMD_LIGHT:
+          switchLampMode();
+          delaySize = 0; //no delay needed
+          break;
+      }
+      if(ok) blinkLed(1);
+      else blinkLed(3);
+      delay(delaySize);
+    }
+  }
 }
 
 void loop() {
+  
+  if(off){
+    ir_loop_off();
+    return;
+  }
+
+  ir_loop();
+  if(IRLremote.receiving()) return;
   // While the ADC interrupt is enabled, wait. The program is still gathering
   // audio samples in the capture buffer.
-  while (ADCSRA & _BV(ADIE));
-
+  //while (ADCSRA & _BV(ADIE));
+  while(samplePos < FFT_N);
+  
   // The sampling interrupt has finished filling the buffer, so show the
   // output we computed last time around the loop. This sends the data to the LED strip.
   strip.show();
 
   // Perform the FFT algorithm to convert samples to complex numbers.
   fft_input(capture, bfly_buff);
-
-  // Get analog input from user
-  setADCDefault(); // configure the ADC so that we can read pot parameters
-  lastParm = parm;
-  parm = analogRead(PARM_POT);
-  if (parm != lastParm) {
-    // only change parameters if we read a different value than last time.
-    setParameters();
-  }
-
 
   if ((colorMode == COLOR_CYCLE) && ((loopCounter % colorIndexIncFreq) == 0)) {
     colorIndex++;
@@ -263,33 +376,10 @@ void loop() {
     transitionWaitTime--;
     if (transitionWaitTime == 0) {
       pattern = chooseRandomPattern();
+      resetPeaks();
       setParameters();
-      reset();
     }
   }
-
-
-  // If the pattern button is pressed...
-  if ((digitalRead(PATTERN_BUTTON_PIN) == LOW) && (digitalRead(COLOR_BUTTON_PIN) == HIGH)) {
-    digitalWrite(LED_PIN, HIGH);
-    setMode();
-    analogWrite(LED_PIN, LED_BRIGHTNESS);
-  }
-
-  if ((digitalRead(COLOR_BUTTON_PIN) == LOW) && (digitalRead(PATTERN_BUTTON_PIN) == HIGH)) {
-    digitalWrite(LED_PIN, HIGH);
-    setColorMode();
-    analogWrite(LED_PIN, LED_BRIGHTNESS);
-  }
-
-  if ((digitalRead(COLOR_BUTTON_PIN) == LOW) && (digitalRead(PATTERN_BUTTON_PIN) == LOW)) {
-    // Both buttons held. Set cutoff frequency band.
-    digitalWrite(LED_PIN, HIGH);
-    setCutoffFreqBand();
-    analogWrite(LED_PIN, LED_BRIGHTNESS);
-  }
-
-
 
   // Now that we've updated the LED strip and processed the audio samples with FFT,
   // we can resume the collection of audio samples in the sample buffer. The interrupt
@@ -438,12 +528,25 @@ void doVisualization() {
   uint32_t color;
   uint8_t r;
 
+  bool Silence = true;
+
+  if (pattern == PATTERN_LAMP){
+    color = adjustBrightness(LAMP_COLOR, lightBrightnessScale);
+    for (i = 0; i < N_LEDS; i++)
+      strip.setPixelColor(i, color);
+    return;
+  }
+  
   // Bright peaks emanating from center moving outward.
   if ((pattern == PATTERN_DANCE_PARTY) ||
-      (pattern == PATTERN_SINGLE_DIR_DANCE_PARTY)) {
+      (pattern == PATTERN_DANCE_PARTY_MIRROR) ||
+      (pattern == PATTERN_SINGLE_DIR_DANCE_PARTY) ||
+      (pattern == PATTERN_SINGLE_DIR_DANCE_PARTY_MIRROR)) {
 
     for (i = 0; i < N_PEAKS; i++) {
       if (peaks[i].magnitude > 0) {
+
+        Silence = false;
         // peak is visually active
 
         // The age of the visual peak will be used to determine brightness.
@@ -473,9 +576,18 @@ void doVisualization() {
             strip.setPixelColor((N_LEDS / 2) + pos, color);
             strip.setPixelColor(((N_LEDS / 2) - 1) - pos, color);
             break;
+          case PATTERN_DANCE_PARTY_MIRROR:
+            // Draw from sides to center.
+            strip.setPixelColor(pos, color);
+            strip.setPixelColor(N_LEDS - 1 - pos, color);
+            break;
           case PATTERN_SINGLE_DIR_DANCE_PARTY:
             // Draw pixel relative to 0
             strip.setPixelColor(pos, color);
+            break;
+          case PATTERN_SINGLE_DIR_DANCE_PARTY_MIRROR:
+            // Draw pixel relative to N_LEDS
+            strip.setPixelColor(N_LEDS - 1 - pos, color);
             break;
         }
 
@@ -488,18 +600,25 @@ void doVisualization() {
           continue;
         }
 
-        if ((pos >= N_LEDS / 2) && (pattern != PATTERN_SINGLE_DIR_DANCE_PARTY)) {
+        if ((pos >= N_LEDS / 2) && (pattern != PATTERN_SINGLE_DIR_DANCE_PARTY) && (pattern != PATTERN_SINGLE_DIR_DANCE_PARTY_MIRROR)) {
           // Off the edge of the strip. This peak can now be returned to the pool
           // of peak structures that are available for use.
           peaks[i].magnitude = 0;
         }
-        if ((pos >= N_LEDS) && (pattern == PATTERN_SINGLE_DIR_DANCE_PARTY)) {
+        if ((pos >= N_LEDS) && ((pattern == PATTERN_SINGLE_DIR_DANCE_PARTY)||(pattern == PATTERN_SINGLE_DIR_DANCE_PARTY_MIRROR))) {
           // Off the edge of the strip. This peak can now be returned to the pool
           // of peak structures that are available for use.
           peaks[i].magnitude = 0;
         }
       }
     }
+
+    if (Silence)
+    {
+      for (i = 0; i < N_LEDS; i++)
+        strip.setPixelColor(i, BACKGROUND);
+    }
+    
     return;
   }
 
@@ -567,6 +686,9 @@ void doVisualization() {
     uint32_t color;
     float ageScale;
     if (peaks[peakIndex].magnitude > 0) {
+
+      Silence = false;
+      
       if (peaks[peakIndex].age == 0) {
         byte baseColor = peaks[peakIndex].baseColor;
         // Since the light bar is so bright, scale down the max brightness
@@ -621,27 +743,29 @@ void doVisualization() {
         peaks[peakIndex].magnitude = 0;
       }
     }
+
+    if (Silence)
+    {
+      for (i = 0; i < N_LEDS; i++)
+        strip.setPixelColor(i, BACKGROUND);
+    }
+    
     return;
   }
 
   // Visual peaks are assigned one of 15 color bars.
-  if ((pattern == PATTERN_COLOR_BARS) || (pattern == PATTERN_COLOR_BARS2)) {
+  if ((pattern == PATTERN_COLOR_BARS) || (pattern == PATTERN_COLOR_BARS2) || (pattern == PATTERN_COLOR_BARS3)) {
     uint8_t k = 0;
     uint8_t oldest;
-    uint8_t nbars;
-    switch (N_LEDS) {
-      case 60:
-      case 120:
-        nbars = 15;
-        break;
-      case 180:
-        nbars = 22;
-        break;
-    }
-    if ((N_LEDS == 60) && (pattern == PATTERN_COLOR_BARS2)) {
-      nbars = nbars / 2;
-    }
+    uint8_t nbars = 20;
+
+    if(pattern == PATTERN_COLOR_BARS3) nbars =10;
+    
     for (i = 0; i < N_PEAKS; i++) {
+
+      if ((peaks[i].magnitude > 0))
+        Silence = false;
+      
       if ((peaks[i].magnitude > 0) && (peaks[i].age == 0)) {
         // New peak (age == 0).
         // Find an unused color bar.
@@ -732,6 +856,12 @@ void doVisualization() {
       }
     }
 
+    if (Silence)
+    {
+      for (i = 0; i < N_LEDS; i++)
+        strip.setPixelColor(i, BACKGROUND);
+    }
+
     return;
   }
 
@@ -739,6 +869,9 @@ void doVisualization() {
     uint8_t pos, width;
     for (i = 0; i < N_PEAKS; i++) {
       if (peaks[i].magnitude > 0) {
+
+        Silence = false;
+        
         if (peaks[i].age == 0) {
           // If peak is brand new, make it max brightness!
           ageScale = 1.0;
@@ -777,12 +910,19 @@ void doVisualization() {
         }
       }
     }
+
+    if (Silence)
+    {
+      for (i = 0; i < N_LEDS; i++)
+        strip.setPixelColor(i, BACKGROUND);
+    }
+    
     return;
   }
 
 }
 
-void reset() {
+void resetPeaks() {
   for (i = 0; i < N_PEAKS; i++) {
     peaks[i].age = 0;
     peaks[i].magnitude = 0;
@@ -815,31 +955,6 @@ void setADCFreeRunning() {
            _BV(ADPS2) | _BV(ADPS1) | _BV(ADPS0); // 128:1 / 13 = 9615 Hz
 }
 
-// Configure ADC for normal Arduino operation so we can read pots.
-void setADCDefault() {
-  // Init ADC free-run mode; f = ( 16MHz/prescaler ) / 13 cycles/conversion
-  ADMUX  = 0;
-  ADCSRA = _BV(ADEN)  | // ADC enable
-           _BV(ADPS2) | _BV(ADPS1) | _BV(ADPS0); // 128:1 / 13 = 9615 Hz
-  ADCSRB = 0;                // Free run mode, no high MUX bit
-  analogRead(PARM_POT); // discard first conversion
-}
-
-// Change parameters based on config value.
-void setConfig() {
-  switch (ledConfig) {
-    case 0:
-      N_LEDS = 60;
-      break;
-    case 1:
-      N_LEDS = 120;
-      break;
-    case 2:
-      N_LEDS = 180;
-      break;
-  }
-}
-
 uint8_t determineWaitTime() {
   // determine how long to wait for the current visualization to "finish"
   // so we can move to a new visualization
@@ -857,7 +972,6 @@ uint8_t determineWaitTime() {
   }
   return (MAX_AGE - youngest) + 3;
 }
-
 
 uint8_t chooseRandomPattern() {
   boolean found = false;
@@ -885,12 +999,14 @@ uint8_t chooseRandomPattern() {
 void setParameters() {
   switch (pattern) {
     case PATTERN_DANCE_PARTY:
+    case PATTERN_DANCE_PARTY_MIRROR:
       MAX_AGE = N_LEDS / 2 + N_LEDS / 8;
       break;
     case PATTERN_PULSE:
       MAX_AGE = 15;
       break;
     case PATTERN_SINGLE_DIR_DANCE_PARTY:
+    case PATTERN_SINGLE_DIR_DANCE_PARTY_MIRROR:
       MAX_AGE = N_LEDS + N_LEDS / 4;
       break;
     case PATTERN_LIGHT_BAR:
@@ -906,6 +1022,9 @@ void setParameters() {
     case PATTERN_COLOR_BARS2:
       MAX_AGE = 25;
       break;
+    case PATTERN_COLOR_BARS3:
+      MAX_AGE = 15;
+      break;
   }
 
   if (colorMode == COLOR_CYCLE) {
@@ -918,6 +1037,7 @@ void setParameters() {
       randColorCount[0] = 31 - randColorChangeParm;
       randColorCount[1] = (31 - randColorChangeParm) >> 1;
     }
+    lastParm = parm;
   }
 }
 
@@ -1085,11 +1205,8 @@ uint8_t getMagnitude(uint8_t band, uint8_t peakValue) {
   return map(peakValue, peakMin, peakMax, 1, 255);
 }
 
-
-
-// Audio-sampling interrupt. This is invoked automatically whenever an ADC
-// conversion is ready.
 ISR(ADC_vect) {
+  if (samplePos >= FFT_N) return;
   static const int16_t noiseThreshold = 4; // ignore small voltage variations.
 
   // the sample is available in the ADC register
@@ -1099,13 +1216,8 @@ ISR(ADC_vect) {
     ((sample > (512 - noiseThreshold)) &&
      (sample < (512 + noiseThreshold))) ? 0 :
     sample - 512; // Sign-convert for FFT; -512 to +511
-
-  if (++samplePos >= FFT_N) {
-    // The sample buffer is full, so disable the interrupt
-    ADCSRA &= ~_BV(ADIE);
-  }
+  ++samplePos;
 }
-
 
 // Scale brightness of a color.
 uint32_t adjustBrightness(uint32_t c, float amt) {
@@ -1154,101 +1266,65 @@ void setEEPROMValid() {
 void saveConfig() {
   // Mark EEPROM as valid
   setEEPROMValid();
-  EEPROM.write(2, ledConfig);
-  EEPROM.write(3, mode);
+  EEPROM.write(3, (mode != PATTERN_LAMP)? mode : lastMode);
   EEPROM.write(4, maxBrightness);
   EEPROM.write(5, colorMode);
   EEPROM.write(6, cutoffFreqBand);
+  EEPROM.write(7, parm/256);
+  EEPROM.write(8, parm&255);
+  EEPROM.write(9, maxLightBrightness);
 }
 
-void configure() {
-  boolean buttonReleased = false;
-
-  // If user is holding color button at startup, read the parameter pot and map the
-  // value to the brightness.
-  if ((digitalRead(COLOR_BUTTON_PIN) == LOW) && (digitalRead(PATTERN_BUTTON_PIN) == HIGH)) {
-    delay(20); // debounce
-    // Configure the ADC (analog to digital converter) to be in normal Arduino mode:
-    setADCDefault();
-
-    // show colors to adjust brightness
-    while ((!buttonReleased) || (digitalRead(COLOR_BUTTON_PIN) == HIGH)) {
-      if (digitalRead(COLOR_BUTTON_PIN) == HIGH) {
-        buttonReleased = true;
-        delay(20); // debounce
-      }
-
-      maxBrightness = analogRead(PARM_POT) >> 2;
-      brightnessScale = maxBrightness / 255.0;
-
-      // Draw each color to allow user to see brightness.
-      strip.clear();
-      for (i = 0; i < N_BANDS; i++) {
-        strip.setPixelColor(i, getColor(i * 32, 0));
-      }
-      strip.show();
-    }
-    strip.clear();
-    // Were'd done reading the pot, so configure the ADC back to free-running mode
-    // for fast audio sampling.
-    setADCFreeRunning();
-    saveConfig();
-    delay(20); // debounce
-    while (digitalRead(COLOR_BUTTON_PIN) == LOW); // wait for release
-    return;
-  }
-
-  // If user is holding pattern button at startup, read the parameter pot and map the
-  // value to the LED config setting (0, 1, 2). 0 means 60 LEDs, 1 means 120 LEDs, 2 means 180 LEDs.
-  if ((digitalRead(PATTERN_BUTTON_PIN) == LOW) && (digitalRead(COLOR_BUTTON_PIN) == HIGH)) {
-    delay(20); // debounce
-    // Configure the ADC (analog to digital converter) to be in normal Arduino mode:
-    setADCDefault();
-    buttonReleased = false;
-    while ((!buttonReleased) || (digitalRead(PATTERN_BUTTON_PIN) == HIGH)) {
-      if (digitalRead(PATTERN_BUTTON_PIN) == HIGH) {
-        buttonReleased = true;
-        delay(20); // debounce
-      }
-
-      // This maps [0,1023] to [0,2]. For mappings with a small number of possible
-      // values, the map() function works best if you add 1 to the max input and max
-      // output. That's why it's 1024 instead of 1023, and 3 instead of 2.
-      ledConfig = map(analogRead(PARM_POT), 0, 1024, LEDCONFIG_60, LEDCONFIG_180+1);
-
-      // Draw 1, 2, or 3 red pixels to indicate ledConfig
-      strip.clear();
-      for (i = 0; i <= ledConfig; i++) {
-        strip.setPixelColor(i, strip.Color(64, 0, 0));
-      }
-      strip.show();
-    }
-    strip.clear();
-    // Were'd done reading the pot, so configure the ADC back to free-running mode
-    // for fast audio sampling.
-    setADCFreeRunning();
-    saveConfig();
-    delay(20); // debounce
-    while (digitalRead(PATTERN_BUTTON_PIN) == LOW); // wait for release
-    return;
-  }
-
-  // If user is holding both buttons at startup, enter diagnostic mode.
-  if ((digitalRead(COLOR_BUTTON_PIN) == LOW) && (digitalRead(PATTERN_BUTTON_PIN) == LOW)) {
-    delay(20); // debounce
-    test();
-    return;
-  }
-}
-
-void setMode() {
-  byte tmp = mode;
-  mode++;
-  if (mode >= N_MODES) {
+void readConfig(){
+  mode = EEPROM.read(3);
+  if (mode > N_MODES) {
     mode = 0;
-    transitionWaitTime = 0;
+  }
+  pattern = mode;
+  if (pattern == PATTERN_RANDOM) {
+    randomized = true;
+    pattern = chooseRandomPattern();
+    loopCounter = 0;
+  } 
+  else {
     randomized = false;
   }
+  maxBrightness = EEPROM.read(4);
+  brightnessScale = maxBrightness / 255.0;
+  colorMode = EEPROM.read(5);
+  if (colorMode >= N_COLOR_MODES) colorMode = N_COLOR_MODES-1;
+  cutoffFreqBand = EEPROM.read(6);
+  if (cutoffFreqBand > 7) cutoffFreqBand = 7;
+  parm = EEPROM.read(7)*256 + EEPROM.read(8);
+  if (parm > 1000) parm = 1000;
+  maxLightBrightness = EEPROM.read(9);
+  lightBrightnessScale = maxLightBrightness / 255.0;
+}
+
+bool changeColor(int incr){
+  bool result = true;
+  int newColorMode = colorMode + incr;
+  if (newColorMode >= N_COLOR_MODES){
+    newColorMode = 0;
+    result = false; //to signal about limit was riched
+  }
+  if (newColorMode < 0){
+    newColorMode = N_COLOR_MODES-1;
+    result = false; //to signal about limit was riched
+  }
+  colorMode = newColorMode;
+  strip.clear();
+  strip.setPixelColor(colorMode, strip.Color(0, 64, 64));
+  strip.show();
+  setParameters();
+  saveConfig();
+  return result;
+}
+
+void setMode(int newMode){
+  transitionWaitTime = 0;
+  randomized = false;
+  mode = newMode;
   pattern = mode;
   if (pattern == PATTERN_RANDOM) {
     randomized = true;
@@ -1257,103 +1333,119 @@ void setMode() {
   } else {
     randomized = false;
   }
-
   strip.clear();
   // Light up an LED in the mode position as an indicator.
   if (!randomized) {
     strip.setPixelColor(mode, strip.Color(64, 64, 64));
   } else {
-    strip.setPixelColor(mode, strip.Color(64, 0, 0)); // red for random pattern
+    for(int i=0; i<PATTERN_RANDOM; i++) // set all for randomized mode
+      strip.setPixelColor(i, strip.Color(64, 0, 0)); 
   }
   strip.show();
 
   // Set parameters for the mode.
   setParameters();
-
-  reset();
-
-  // wait until button release
-  while ((digitalRead(PATTERN_BUTTON_PIN) == LOW) && (digitalRead(COLOR_BUTTON_PIN) == HIGH));
-  strip.clear();
-
+  resetPeaks();
   saveConfig();
 }
 
-void setColorMode() {
-  byte tmp = colorMode;
-  colorMode++;
-  if (colorMode >= N_COLOR_MODES) {
-    colorMode = 0;
+bool changeMode(int incr){
+  bool result = true;
+  int newMode = mode + incr;
+  if (newMode >= N_MODES-1){//skip the random mode, which is N_MODES-1
+    newMode = 0;            //...and start from the first
+    result = false;         //to signal about limit was riched
   }
-  strip.clear();
-  strip.setPixelColor(colorMode, strip.Color(0, 64, 64));
-  strip.show();
-  while ((digitalRead(COLOR_BUTTON_PIN) == LOW) && (digitalRead(PATTERN_BUTTON_PIN) == HIGH));
-  if (digitalRead(PATTERN_BUTTON_PIN) == LOW) {
-    // other button was pressed, so undo this operation
-    colorMode = tmp;
+  if (newMode < 0){
+    newMode = N_MODES-2; //skip random mode, which is the last one
+    result = false;      //to signal about limit was riched
   }
-  strip.clear();
-  saveConfig();
+  setParameters();
+  setMode(newMode);
+  return result;
 }
 
-void setCutoffFreqBand() {
-  // Configure the ADC (analog to digital converter) to be in normal Arduino mode:
-  setADCDefault();
-  uint16_t reading1 = map(analogRead(PARM_POT), 0, 1024, 0, 8);
+bool changeBrightness(int incr){
+  bool result = true;
+  int newBbrightness = maxBrightness + incr*20;
+  if(newBbrightness>255){newBbrightness=255;result=false;} //signal the MAX limit is reached
+  if(newBbrightness<20){newBbrightness=20;result=false;}   //signal the MIN limit is reached
+  maxBrightness = newBbrightness;
+  brightnessScale = maxBrightness / 255.0;
+  // Set parameters for the mode.
+  setParameters();
+  saveConfig();
+  return result;
+}
+
+bool changeLampBrightness(int incr){
+  bool result = true;
+  int newLightBrightness = maxLightBrightness + incr*25;
+  if(newLightBrightness>=150){newLightBrightness=150;result=false;} //signal the MAX limit is reached
+  if(newLightBrightness<10){newLightBrightness=10;result=false;}   //signal the MIN limit is reached
+  maxLightBrightness = newLightBrightness;
+  lightBrightnessScale = maxLightBrightness / 255.0;
+  // Set parameters for the mode.
+  setParameters();
+  saveConfig();
+  return result;
+}
+
+bool changeParm(int incr){
+  bool result = true;
+  int newParm = parm + incr*100;
+  if(newParm >= 1023){
+    newParm = 1023;
+    result = false;   //parm the MAX limit is reached
+  }
+  if(newParm < 523){
+    newParm = 523;
+    result = false;   //parm the MIN limit is reached
+  }
+  parm = newParm;
+  // Set parameters for the mode.
+  setParameters();
+  saveConfig();
+  return result;
+}
+
+bool changeFreqCutMode(int incr){
+  bool result = true;
+  int newFreqMode = cutoffFreqBand + incr;
+  if(newFreqMode >= N_BANDS){
+    newFreqMode = 2;
+    result = false; //to signal about limit was riched
+  }
+  if(newFreqMode < 2){
+    newFreqMode = N_BANDS-1;//reverced change is not used, but let it be
+    result = false; //to signal about limit was riched
+  }
+  
+  cutoffFreqBand = newFreqMode;
   uint8_t tmpColorMode = colorMode;
-  colorMode = COLOR_BAND;
+  colorMode = COLOR_BAND; //change mode to let getColor() return colors for the bands
 
-  // show bands to adjust cutoff frequency band
-  while ((digitalRead(PATTERN_BUTTON_PIN) == LOW) && (digitalRead(COLOR_BUTTON_PIN) == LOW)) {
-    strip.clear();
-    for (i = 0; i <= cutoffFreqBand; i++) {
-      strip.setPixelColor(i, getColor(i * 32, 0));
-    }
-    strip.show();
-    uint16_t reading2 = map(analogRead(PARM_POT), 0, 1024, 0, 8);
-    if (reading2 != reading1) {
-      reading1 = reading2;
-      cutoffFreqBand = reading2;
-    }
+  // show bands to adjusting cutoff frequency band
+  strip.clear();
+  for (i = 0; i <= cutoffFreqBand; i++) {
+    strip.setPixelColor(i, getColor(i * 32, 0));
   }
-
+  strip.show();
   colorMode = tmpColorMode;
 
+  setParameters();
+  resetPeaks();
   saveConfig();
-  while ((digitalRead(PATTERN_BUTTON_PIN) == LOW) || (digitalRead(COLOR_BUTTON_PIN) == LOW)); // wait for release of both buttons
-  strip.clear();
+  return result;
 }
 
-void test() {
-  // diagnostics for first time startup
-  setADCDefault();
-  TIMSK0 = 1;
-  boolean buttonReleased = false;
-
-  for (i = 0; i < 10; i++) {
-    strip.clear();
-    strip.setPixelColor(i, strip.Color(64, 64, 64));
-    strip.show();
-    delay(20);
+void switchLampMode(){
+  if(mode != PATTERN_LAMP){
+    lastMode = mode;//saved the current mode
+    mode = PATTERN_LAMP;
   }
-
-  strip.clear();
-  strip.show();
-
-  while ((!buttonReleased) || (digitalRead(PATTERN_BUTTON_PIN) == HIGH)) {
-    if (digitalRead(PATTERN_BUTTON_PIN) == HIGH) {
-      buttonReleased = true;
-      delay(20); // debounce
-    }
-
-    // set LED brightness to parm pot reading.
-    analogWrite(LED_PIN, map(analogRead(PARM_POT), 0, 1023, 5, 255));
+  else{
+    mode = lastMode;
   }
-
-  TIMSK0 = 0;
-  analogWrite(LED_PIN, LED_BRIGHTNESS);
-  setADCFreeRunning();
-  while (digitalRead(PATTERN_BUTTON_PIN) == LOW); // wait for release
+  setMode(mode);
 }
-
