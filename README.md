@@ -13,6 +13,12 @@ Changes from the original Lumazoid project are:
 
 ![rc](img/RC.jpg)
 
+Color modes:
+- Randomized color
+- Cycle color change
+- Band base color + fractional part
+- Pure Band color
+
 Install libraries/ffft in your Arduino sketchbook libraries folder.
 
 Requires:

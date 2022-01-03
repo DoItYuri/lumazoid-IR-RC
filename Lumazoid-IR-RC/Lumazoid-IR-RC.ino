@@ -90,10 +90,11 @@
 #define N_MODES                               12
 #define PATTERN_LAMP                          N_MODES
 
-#define COLOR_RANDOM      0
-#define COLOR_CYCLE       1
-#define COLOR_BAND        2
-#define N_COLOR_MODES     3
+#define COLOR_RANDOM      0 //colors are random
+#define COLOR_CYCLE       1 //colors are changed in cycle
+#define COLOR_BAND        2 //colors match to bands + fractional part of color component
+#define COLOR_PURE_BAND   3 //colors match to bands, pure base colors
+#define N_COLOR_MODES     4
 
 #define MAX_COLOR_BARS    22
 #define MAXCOLORINDEX     256
@@ -111,7 +112,7 @@ uint8_t newPeakFlags = 0;
 uint8_t mode = 0;         //current mode
 uint8_t lastMode = 0;
 uint8_t pattern = 0;
-uint8_t cutoffFreqBand = 2;
+uint8_t cutoffFreqBand = 3;
 uint8_t colorMode = COLOR_RANDOM;
 uint8_t colorIndexIncFreq = 100;
 uint8_t colorIndex = 0;
@@ -161,14 +162,14 @@ const uint8_t PROGMEM noiseFloor[64] = {8, 6, 6, 5, 3, 4, 4, 4, 3, 4, 4, 3, 2, 3
 const uint8_t PROGMEM eq[64] = {255, 175, 218, 225, 220, 198, 147, 99, 68, 47, 33, 22, 14, 8, 4, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 const uint8_t PROGMEM bandBinCounts[] = {2, 4, 5, 8, 11, 17, 25, 37};
 const uint8_t PROGMEM bandBinStarts[] = {1, 1, 2, 3, 5, 7, 11, 16};
-const uint8_t PROGMEM band0weights[] = {181, 40};
-const uint8_t PROGMEM band1weights[] = {19, 186, 38, 2};
-const uint8_t PROGMEM band2weights[] = {11, 176, 118, 16, 1};
-const uint8_t PROGMEM band3weights[] = {5, 55, 165, 164, 71, 18, 4, 1};
-const uint8_t PROGMEM band4weights[] = {3, 24, 89, 139, 148, 118, 54, 20, 6, 2, 1};
-const uint8_t PROGMEM band5weights[] = {2, 9, 29, 70, 125, 172, 185, 162, 118, 74, 41, 21, 10, 5, 2, 1, 1};
-const uint8_t PROGMEM band6weights[] = {1, 4, 11, 25, 49, 83, 121, 156, 180, 185, 174, 149, 118, 87, 60, 40, 25, 16, 10, 6, 4, 2, 1, 1, 1};
-const uint8_t PROGMEM band7weights[] = {1, 2, 5, 10, 18, 30, 46, 67, 92, 118, 143, 164, 179, 185, 184, 174, 158, 139, 118, 97, 77, 60, 45, 34, 25, 18, 13, 9, 7, 5, 3, 2, 2, 1, 1, 1, 1};
+const uint8_t PROGMEM band0weights[] = {181, 40}; //red
+const uint8_t PROGMEM band1weights[] = {19, 186, 38, 2}; //orange
+const uint8_t PROGMEM band2weights[] = {11, 176, 118, 16, 1}; //yellow
+const uint8_t PROGMEM band3weights[] = {5, 55, 165, 164, 71, 18, 4, 1}; //green
+const uint8_t PROGMEM band4weights[] = {3, 24, 89, 139, 148, 118, 54, 20, 6, 2, 1}; //cyan
+const uint8_t PROGMEM band5weights[] = {2, 9, 29, 70, 125, 172, 185, 162, 118, 74, 41, 21, 10, 5, 2, 1, 1}; //blue
+const uint8_t PROGMEM band6weights[] = {1, 4, 11, 25, 49, 83, 121, 156, 180, 185, 174, 149, 118, 87, 60, 40, 25, 16, 10, 6, 4, 2, 1, 1, 1}; //magenta
+const uint8_t PROGMEM band7weights[] = {1, 2, 5, 10, 18, 30, 46, 67, 92, 118, 143, 164, 179, 185, 184, 174, 158, 139, 118, 97, 77, 60, 45, 34, 25, 18, 13, 9, 7, 5, 3, 2, 2, 1, 1, 1, 1}; //white
 const uint8_t PROGMEM * const bandWeights[] = {band0weights, band1weights, band2weights, band3weights, band4weights, band5weights, band6weights, band7weights};
 
 void setup() {
@@ -430,7 +431,7 @@ void loop() {
           // Initialize the structure.
           peaks[peakIndex].age = 0;
           peaks[peakIndex].rnd = random(255); // a random component for a visualzation to use. For example, to shift the color a bit.
-          if (colorMode == COLOR_BAND) {
+          if (colorMode == COLOR_BAND || colorMode == COLOR_PURE_BAND) {
             peaks[peakIndex].baseColor = i * 32;
           }
           if (colorMode == COLOR_RANDOM) {
@@ -1075,7 +1076,7 @@ uint32_t getColor(uint8_t index, uint8_t rnd) {
   } else {
     index += (rnd >> 5); // not as much random variation in 2-color scheme mode
   }
-  byte f = (index % 32) * 8; // fractional part of color component
+  byte f = (colorMode != COLOR_PURE_BAND) ? (index % 32) * 8 : 0; // fractional part of color component
   switch (index / 32) {
     case 0: // red
       r = 255;
@@ -1290,9 +1291,9 @@ void readConfig(){
   maxBrightness = EEPROM.read(4);
   brightnessScale = maxBrightness / 255.0;
   colorMode = EEPROM.read(5);
-  if (colorMode >= N_COLOR_MODES) colorMode = N_COLOR_MODES-1;
+  if (colorMode >= N_COLOR_MODES) colorMode = COLOR_RANDOM;
   cutoffFreqBand = EEPROM.read(6);
-  if (cutoffFreqBand > N_BANDS) cutoffFreqBand = N_BANDS;
+  if (cutoffFreqBand > N_BANDS) cutoffFreqBand = 3;
   parm = EEPROM.read(7)*256 + EEPROM.read(8);
   if (parm > 1000) parm = 1000;
   maxLightBrightness = EEPROM.read(9);
@@ -1315,6 +1316,7 @@ bool changeColor(int incr){
   strip.setPixelColor(colorMode*2, strip.Color(0, 64, 64));
   strip.show();
   setParameters();
+  resetPeaks();
   saveConfig();
   return result;
 }
@@ -1358,7 +1360,6 @@ bool changeMode(int incr){
     newMode = N_MODES-2; //skip random mode, which is the last one
     result = false;      //to signal about limit was riched
   }
-  setParameters();
   setMode(newMode);
   return result;
 }
@@ -1411,10 +1412,10 @@ bool changeFreqCutMode(int incr){
   bool result = true;
   int newFreqMode = cutoffFreqBand + incr;
   if(newFreqMode > N_BANDS){
-    newFreqMode = 2;
+    newFreqMode = 3; //3 colors minimum
     result = false; //to signal about limit was riched
   }
-  if(newFreqMode < 2){
+  if(newFreqMode < 3){
     newFreqMode = N_BANDS;//reverced change is not used, but let it be
     result = false; //to signal about limit was riched
   }
