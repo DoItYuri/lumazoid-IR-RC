@@ -226,7 +226,7 @@ void setup() {
     maxBrightness = 255;
     maxLightBrightness = 255;
     colorMode = COLOR_RANDOM;
-    cutoffFreqBand = 7;
+    cutoffFreqBand = N_BANDS;
     parm = 1023;
     saveConfig();
   }
@@ -245,7 +245,6 @@ void blinkLed(int times){
 void ir_loop_off(){
   if (IRLremote.available()) {
     bool ok = true;
-    int delaySize = 300; //задержка, чтобы лучше разглядеть индикаторы на ленте
     // Get the new data from the remote
     auto data = IRLremote.read();
     if(data.command != 0){ //process the received code
@@ -255,7 +254,6 @@ void ir_loop_off(){
           blinkLed(5);
           break;
       }
-      delay(delaySize);
     }
   }
 }
@@ -263,7 +261,7 @@ void ir_loop_off(){
 void ir_loop(){
   if (IRLremote.available()) {
     bool ok = true;
-    int delaySize = 300; //delay, to see the indication on the strip
+    int delaySize = 1000; //delay, to see the indication on the strip
     // Get the new data from the remote
     auto data = IRLremote.read();
     if(data.command != 0){ //process the received code
@@ -400,7 +398,7 @@ void loop() {
 
     // The peak values for each of the 8 bands has been computed. A bit in the 8-bit
     // value newPeakFlags indicates whether the analysis found a *new* peak in the band.
-    for (i = 0; i <= cutoffFreqBand; i++) {
+    for (i = 0; i < cutoffFreqBand; i++) {
 
       // If a new peak was found in band i...
       if (newPeakFlags & (1 << i)) {
@@ -465,7 +463,7 @@ void analyzeAudioSamples() {
   // that should be displayed.
   if (++bandPeakCounter >= bandPeakDecay) {
     bandPeakCounter = 0;
-    for (i = 0; i <= cutoffFreqBand; i++) {
+    for (i = 0; i < cutoffFreqBand; i++) {
       if (bandPeakLevel[i] > 0) {
         bandPeakLevel[i]--;
       }
@@ -488,7 +486,7 @@ void analyzeAudioSamples() {
 
   // Downsample spectrum output to 8 bands.
   newPeakFlags = 0;
-  for (i = 0; i <= cutoffFreqBand; i++) {
+  for (i = 0; i < cutoffFreqBand; i++) {
     data   = (uint8_t *)pgm_read_word(&bandWeights[i]);
     binNum = pgm_read_byte(&bandBinStarts[i]);
     nBins = pgm_read_byte(&bandBinCounts[i]);
@@ -1294,7 +1292,7 @@ void readConfig(){
   colorMode = EEPROM.read(5);
   if (colorMode >= N_COLOR_MODES) colorMode = N_COLOR_MODES-1;
   cutoffFreqBand = EEPROM.read(6);
-  if (cutoffFreqBand > 7) cutoffFreqBand = 7;
+  if (cutoffFreqBand > N_BANDS) cutoffFreqBand = N_BANDS;
   parm = EEPROM.read(7)*256 + EEPROM.read(8);
   if (parm > 1000) parm = 1000;
   maxLightBrightness = EEPROM.read(9);
@@ -1314,7 +1312,7 @@ bool changeColor(int incr){
   }
   colorMode = newColorMode;
   strip.clear();
-  strip.setPixelColor(colorMode, strip.Color(0, 64, 64));
+  strip.setPixelColor(colorMode*2, strip.Color(0, 64, 64));
   strip.show();
   setParameters();
   saveConfig();
@@ -1336,10 +1334,10 @@ void setMode(int newMode){
   strip.clear();
   // Light up an LED in the mode position as an indicator.
   if (!randomized) {
-    strip.setPixelColor(mode, strip.Color(64, 64, 64));
+    strip.setPixelColor(mode*2, strip.Color(64, 64, 64));
   } else {
     for(int i=0; i<PATTERN_RANDOM; i++) // set all for randomized mode
-      strip.setPixelColor(i, strip.Color(64, 0, 0)); 
+      strip.setPixelColor(i*2, strip.Color(64, 64, 64)); 
   }
   strip.show();
 
@@ -1412,12 +1410,12 @@ bool changeParm(int incr){
 bool changeFreqCutMode(int incr){
   bool result = true;
   int newFreqMode = cutoffFreqBand + incr;
-  if(newFreqMode >= N_BANDS){
+  if(newFreqMode > N_BANDS){
     newFreqMode = 2;
     result = false; //to signal about limit was riched
   }
   if(newFreqMode < 2){
-    newFreqMode = N_BANDS-1;//reverced change is not used, but let it be
+    newFreqMode = N_BANDS;//reverced change is not used, but let it be
     result = false; //to signal about limit was riched
   }
   
@@ -1427,8 +1425,8 @@ bool changeFreqCutMode(int incr){
 
   // show bands to adjusting cutoff frequency band
   strip.clear();
-  for (i = 0; i <= cutoffFreqBand; i++) {
-    strip.setPixelColor(i, getColor(i * 32, 0));
+  for (i = 0; i < cutoffFreqBand; i++) {
+    strip.setPixelColor(i*2, getColor(i * 32, 0));
   }
   strip.show();
   colorMode = tmpColorMode;
