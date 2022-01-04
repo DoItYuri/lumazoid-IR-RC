@@ -1383,9 +1383,9 @@ bool changeColor(int incr){
     result = false; //to signal about limit was riched
   }
   colorMode = newColorMode;
-  strip.clear();
-  strip.setPixelColor(colorMode*2, strip.Color(0, 64, 64));
-  strip.show();
+  
+  showModeOnStrip(strip.Color(0, 100, 100), colorMode, N_COLOR_MODES, false);
+  
   setParameters();
   resetPeaks();
   saveConfig();
@@ -1404,16 +1404,10 @@ void setMode(int newMode){
   } else {
     randomized = false;
   }
-  strip.clear();
+  
   // Light up an LED in the mode position as an indicator.
-  if (!randomized) {
-    strip.setPixelColor(mode*2, strip.Color(64, 64, 64));
-  } else {
-    for(int i=0; i<PATTERN_RANDOM; i++) // set all for randomized mode
-      strip.setPixelColor(i*2, strip.Color(64, 64, 64)); 
-  }
-  strip.show();
-
+  showModeOnStrip(strip.Color(100, 100, 0), mode, PATTERN_RANDOM, randomized);
+  
   // Set parameters for the mode.
   setParameters();
   resetPeaks();
@@ -1517,6 +1511,20 @@ void switchLampMode(){
   setMode(mode);
 }
 
+void showModeOnStrip(uint32_t color, uint8_t num, uint8_t maxNum, bool all){
+  uint32_t darkColor = adjustBrightness(color, 0.05);
+  strip.clear();
+  for(int i=0; i<maxNum; i++){
+      if(i == num || all)
+        strip.setPixelColor(i*2, color);
+      else if(i < num)
+        strip.setPixelColor(i*2, darkColor);
+      else
+        strip.setPixelColor(i*2, darkColor);
+   }
+   strip.show();
+}
+
 void showBandsOnStrip(){
   // show bands to adjusting cutoff frequency band
   uint8_t tmpColorMode = colorMode;
@@ -1532,7 +1540,6 @@ void showBandsOnStrip(){
 void showMirage(bool mirror){
   float ageScale;
   uint32_t color;
-  //uint8_t r;
   bool Silence = true;
   uint8_t k = 0;
   uint8_t nbars = mirror ? cutoffFreqBand*2-1 : cutoffFreqBand;
@@ -1568,7 +1575,6 @@ void showMirage(bool mirror){
       ageScale = 0.5 * (float)(1.0 - ((float)peaks[j].age / (float)MAX_AGE));
     }
 
-    //color = adjustBrightness(getColor(peaks[j].baseColor, peaks[j].rnd), ageScale);
     color = adjustBrightness(getColor(peaks[j].baseColor, 0), ageScale);
     if (peaks[j].age == MAX_AGE) {
       // mark the assigned color bar as unused.
