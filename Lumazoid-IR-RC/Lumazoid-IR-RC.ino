@@ -44,33 +44,56 @@
 #define ADC_CHANNEL       1  //A1 - input
 #define BACKGROUND        ((uint32_t) 0x000000) //background color
 #define LAMP_COLOR        ((uint32_t) 0x646464) //light color
+#define RC_DELAY          2000
 
 #define LED_PIN           13
 #define LED_STRIP_PIN     6
 #define REF_POT_GND       A0
 #define IR_RECEIVE_PIN    2
 
-#define IR_CMD_ON_OFF     0x45
-#define IR_CMD_COLOR_NEXT 0x40
-#define IR_CMD_MODE_NEXT  0x44
-#define IR_CMD_BRIGHT_DEC 0x16
-#define IR_CMD_BRIGHT_INC 0x19
-#define IR_CMD_PARM_DEC   0x07
-#define IR_CMD_PARM_INC   0x15
-#define IR_CMD_MODE_0     0x0d
-#define IR_CMD_MODE_1     0x0c
-#define IR_CMD_MODE_2     0x18
-#define IR_CMD_MODE_3     0x5e
-#define IR_CMD_MODE_4     0x08
-#define IR_CMD_MODE_5     0x1c
-#define IR_CMD_MODE_6     0x5a
-#define IR_CMD_MODE_7     0x42
-#define IR_CMD_MODE_8     0x52
-#define IR_CMD_MODE_9     0x4a
-#define IR_CMD_PLAY_RAND  0x09
-#define IR_CMD_ONE_RAND   0x46
-#define IR_CMD_EQ         0x43
-#define IR_CMD_LIGHT      0x47
+#define RC_BTN_ON_OFF     0x45
+#define RC_BTN_STOP       0x46
+#define RC_BTN_MUTE       0x47
+#define RC_BTN_MODE       0x44
+#define RC_BTN_BACK       0x40
+#define RC_BTN_EQ         0x43
+#define RC_BTN_PREV       0x07
+#define RC_BTN_NEXT       0x15
+#define RC_BTN_PLAY_PAUSE 0x09
+#define RC_BTN_VOL_DEC    0x16
+#define RC_BTN_VOL_INC    0x19
+#define RC_BTN_0          0x0d
+#define RC_BTN_1          0x0c
+#define RC_BTN_2          0x18
+#define RC_BTN_3          0x5e
+#define RC_BTN_4          0x08
+#define RC_BTN_5          0x1c
+#define RC_BTN_6          0x5a
+#define RC_BTN_7          0x42
+#define RC_BTN_8          0x52
+#define RC_BTN_9          0x4a
+
+#define IR_CMD_ON_OFF     RC_BTN_ON_OFF
+#define IR_CMD_COLOR_NEXT RC_BTN_BACK
+#define IR_CMD_MODE_NEXT  RC_BTN_MODE
+#define IR_CMD_BRIGHT_DEC RC_BTN_VOL_DEC
+#define IR_CMD_BRIGHT_INC RC_BTN_VOL_INC
+#define IR_CMD_PARM_DEC   RC_BTN_PREV
+#define IR_CMD_PARM_INC   RC_BTN_NEXT
+#define IR_CMD_MODE_0     RC_BTN_0
+#define IR_CMD_MODE_1     RC_BTN_1
+#define IR_CMD_MODE_2     RC_BTN_2
+#define IR_CMD_MODE_3     RC_BTN_3
+#define IR_CMD_MODE_4     RC_BTN_4
+#define IR_CMD_MODE_5     RC_BTN_5
+#define IR_CMD_MODE_6     RC_BTN_6
+#define IR_CMD_MODE_7     RC_BTN_7
+#define IR_CMD_MODE_8     RC_BTN_8
+#define IR_CMD_MODE_9     RC_BTN_9
+#define IR_CMD_PLAY_RAND  RC_BTN_PLAY_PAUSE
+#define IR_CMD_ONE_RAND   RC_BTN_STOP
+#define IR_CMD_EQ         RC_BTN_EQ
+#define IR_CMD_LIGHT      RC_BTN_MUTE
 
 #define N_BANDS           8
 #define N_FRAMES          5
@@ -102,6 +125,10 @@
 #define EEPROM_MAGIC_NUMBER 0xbad1 // just a 16 bit number that is not likely to randomly be found in EEPROM.
 #define LED_BRIGHTNESS    25
 #define UNUSED            255
+
+#define NO_BLINKING       0
+#define SINLE_BLINK       1
+#define MULTI_BLINK       2
 
 CNec IRLremote;
 
@@ -142,6 +169,8 @@ byte maxBrightness = 255;
 float brightnessScale = 1.0;
 byte maxLightBrightness = 255;
 float lightBrightnessScale = 1.0;
+long unsigned int delayTimeOnRc = 0;
+uint32_t lastRcCmd = 0;
 
 byte
 bandPeakLevel[8],      // Peak level of each band
@@ -246,7 +275,6 @@ void blinkLed(int times){
 
 void ir_loop_off(){
   if (IRLremote.available()) {
-    bool ok = true;
     // Get the new data from the remote
     auto data = IRLremote.read();
     if(data.command != 0){ //process the received code
@@ -262,36 +290,36 @@ void ir_loop_off(){
 
 void ir_loop(){
   if (IRLremote.available()) {
-    bool ok = true;
-    int delaySize = 1000; //delay, to see the indication on the strip
+    int led = SINLE_BLINK;
+    unsigned int delaySize = RC_DELAY; //delay, to see the indication on the strip
     // Get the new data from the remote
     auto data = IRLremote.read();
     if(data.command != 0){ //process the received code
-      switch(data.command){
+      lastRcCmd = data.command;
+      switch(lastRcCmd){
         case IR_CMD_ON_OFF:
           off = true;
           strip.clear();
+          delaySize = 0; //no delay needed
           break;
         case IR_CMD_COLOR_NEXT:
-          ok = changeColor(1);
+          led = changeColor(1) ? SINLE_BLINK : MULTI_BLINK;
           break;
         case IR_CMD_MODE_NEXT:
-          ok = changeMode(1);
+          led = changeMode(1) ? SINLE_BLINK : MULTI_BLINK;
           break;
         case IR_CMD_BRIGHT_DEC:
-          ok = (pattern == PATTERN_LAMP) ? changeLampBrightness(-1) : changeBrightness(-1);
-          delaySize = 0; //no delay needed
+          led = ((pattern == PATTERN_LAMP) ? changeLampBrightness(-1) : changeBrightness(-1)) ? SINLE_BLINK : MULTI_BLINK;
           break;
         case IR_CMD_BRIGHT_INC:
-          ok = (pattern == PATTERN_LAMP) ? changeLampBrightness(1) : changeBrightness(1);
-          delaySize = 0; //no delay needed
+          led = ((pattern == PATTERN_LAMP) ? changeLampBrightness(1) : changeBrightness(1)) ? SINLE_BLINK : MULTI_BLINK;
           break;
         case IR_CMD_PARM_DEC:
-          ok = changeParm(-1);
+          led = changeParm(-1) ? NO_BLINKING : MULTI_BLINK;
           delaySize = 0; //no delay needed
           break;
         case IR_CMD_PARM_INC:
-          ok = changeParm(1);
+          led = changeParm(1) ? NO_BLINKING : MULTI_BLINK;
           delaySize = 0; //no delay needed
           break;
         case IR_CMD_MODE_0:
@@ -337,10 +365,20 @@ void ir_loop(){
           switchLampMode();
           delaySize = 0; //no delay needed
           break;
+        default:
+          lastRcCmd = 0;
       }
-      if(ok) blinkLed(1);
-      else blinkLed(3);
-      delay(delaySize);
+      if(lastRcCmd != 0){ //do not react on unknown commands
+        switch(led){
+          case SINLE_BLINK:
+            blinkLed(1);
+            break;
+          case MULTI_BLINK:
+            blinkLed(3);
+            break;
+        }
+        delayTimeOnRc = millis() + delaySize;
+      }
     }
   }
 }
@@ -353,7 +391,11 @@ void loop() {
   }
 
   ir_loop();
-  if(IRLremote.receiving()) return;
+  
+  if(millis() < delayTimeOnRc) return;
+  
+  if(IRLremote.receiving()) return; //do not disturb the receiving commands from Remote Control
+  
   // While the ADC interrupt is enabled, wait. The program is still gathering
   // audio samples in the capture buffer.
   //while (ADCSRA & _BV(ADIE));
@@ -556,7 +598,7 @@ void doVisualization() {
 
         // If brightness has been altered by a parameter, scale everything further.
         // Get the right color for this peak's band and adjust the brightness.
-        color = adjustBrightness(getColor(peaks[i].baseColor, peaks[i].rnd), ageScale * brightnessScale);
+        color = adjustBrightness(getColor(peaks[i].baseColor, peaks[i].rnd), ageScale);
 
         // Calculate horizontal position relative to starting point.
         // The first term is a value from 0.0 to 1.0 indicating speed.
@@ -1374,6 +1416,9 @@ bool changeBrightness(int incr){
   if(newBbrightness<20){newBbrightness=20;result=false;}   //signal the MIN limit is reached
   maxBrightness = newBbrightness;
   brightnessScale = maxBrightness / 255.0;
+
+  showBandsOnStrip();
+
   // Set parameters for the mode.
   setParameters();
   saveConfig();
@@ -1424,16 +1469,8 @@ bool changeFreqCutMode(int incr){
   }
   
   cutoffFreqBand = newFreqMode;
-  uint8_t tmpColorMode = colorMode;
-  colorMode = COLOR_BAND; //change mode to let getColor() return colors for the bands
-
-  // show bands to adjusting cutoff frequency band
-  strip.clear();
-  for (i = 0; i < cutoffFreqBand; i++) {
-    strip.setPixelColor(i*2, getColor(i * 32, 0));
-  }
-  strip.show();
-  colorMode = tmpColorMode;
+  
+  showBandsOnStrip();
 
   setParameters();
   resetPeaks();
@@ -1450,4 +1487,17 @@ void switchLampMode(){
     mode = lastMode;
   }
   setMode(mode);
+}
+
+void showBandsOnStrip(){
+  // show bands to adjusting cutoff frequency band
+  uint8_t tmpColorMode = colorMode;
+  colorMode = COLOR_BAND; //change mode to let getColor() return colors for the bands
+  strip.clear();
+  for (i = 0; i < cutoffFreqBand; i++) {
+    strip.setPixelColor(i*2, getColor(i * 32, 0));
+  }
+  strip.show();
+  colorMode = tmpColorMode;
+
 }
