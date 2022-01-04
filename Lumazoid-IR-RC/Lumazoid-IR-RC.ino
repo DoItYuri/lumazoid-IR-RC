@@ -9,14 +9,14 @@
  *
  * IR remote control CMD (21 buttons):
  *   on/off  0x45   on/off
- *   stop    0x46   (not used)
+ *   stop    0x46   select one mode by random
  *   mute    0x47   on/off lamp mode
  *   mode    0x44   next  mode
  *   back    0x40   next color mode
  *   eq      0x43   change freqencies
  *   bward   0x07   reduce PARAMETER (colors change speed)
  *   fward   0x15   increase PARAMETER (colors change speed)
- *   play    0x09   randomized mode
+ *   play    0x09   play all modes in random order
  *   vol-    0x16   reduce BRIGHTNESS
  *   vol+    0x19   increase BRIGHTNESS
  *   0       0x0d   mode 0
@@ -67,7 +67,8 @@
 #define IR_CMD_MODE_7     0x42
 #define IR_CMD_MODE_8     0x52
 #define IR_CMD_MODE_9     0x4a
-#define IR_CMD_MODE_RAND  0x09
+#define IR_CMD_PLAY_RAND  0x09
+#define IR_CMD_ONE_RAND   0x46
 #define IR_CMD_EQ         0x43
 #define IR_CMD_LIGHT      0x47
 
@@ -93,7 +94,7 @@
 #define COLOR_RANDOM      0 //colors are random
 #define COLOR_CYCLE       1 //colors are changed in cycle
 #define COLOR_BAND        2 //colors match to bands + fractional part of color component
-#define COLOR_PURE_BAND   3 //colors match to bands, pure base colors
+#define COLOR_PURE_BAND   3 //colors match to bands, pure colors
 #define N_COLOR_MODES     4
 
 #define MAX_COLOR_BARS    22
@@ -323,8 +324,11 @@ void ir_loop(){
         case IR_CMD_MODE_9:
           setMode(PATTERN_COLOR_BARS3);
           break;
-        case IR_CMD_MODE_RAND:
+        case IR_CMD_PLAY_RAND:
           setMode(PATTERN_RANDOM);
+          break;
+        case IR_CMD_ONE_RAND:
+          setMode(random(PATTERN_RANDOM));
           break;
         case IR_CMD_EQ:
           changeFreqCutMode(1);
@@ -400,7 +404,6 @@ void loop() {
     // The peak values for each of the 8 bands has been computed. A bit in the 8-bit
     // value newPeakFlags indicates whether the analysis found a *new* peak in the band.
     for (i = 0; i < cutoffFreqBand; i++) {
-
       // If a new peak was found in band i...
       if (newPeakFlags & (1 << i)) {
         // Map the peak value to a magnitude in range [0,255]. We pass in the band
