@@ -93,7 +93,7 @@
 #define IR_CMD_PLAY_RAND  RC_BTN_PLAY_PAUSE
 #define IR_CMD_ONE_RAND   RC_BTN_STOP
 #define IR_CMD_EQ         RC_BTN_EQ
-#define IR_CMD_LIGHT      RC_BTN_MUTE
+#define IR_CMD_LAMP       RC_BTN_MUTE
 
 #define N_BANDS           8
 #define N_FRAMES          5
@@ -132,6 +132,8 @@
 #define SINLE_BLINK       1
 #define MULTI_BLINK       2
 
+void setMode(int newMode, bool indicator = true);
+
 CNec IRLremote;
 
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(N_LEDS, LED_STRIP_PIN, NEO_GRB + NEO_KHZ800);
@@ -152,6 +154,7 @@ uint8_t randColorChangeParm = 10;
 uint16_t MAX_AGE = 0;
 uint16_t parm = 1000;
 uint16_t lastParm=0;
+uint8_t lampAge = 0;
 uint8_t colorBars[MAX_COLOR_BARS];
 uint16_t loopCounter = 0;
 uint16_t loopCounterMax = 500;
@@ -375,7 +378,7 @@ void ir_loop(){
         case IR_CMD_EQ:
           changeFreqCutMode(1);
           break;
-        case IR_CMD_LIGHT:
+        case IR_CMD_LAMP:
           switchLampMode();
           delaySize = 0; //no delay needed
           break;
@@ -1095,6 +1098,9 @@ void setParameters() {
     case PATTERN_MIRAGE_MIRROR:
       MAX_AGE = 15;
       break;
+    case PATTERN_LAMP:
+      MAX_AGE = 120;
+      break;
    }
 
   if (colorMode == COLOR_CYCLE) {
@@ -1392,7 +1398,7 @@ bool changeColor(int incr){
   return result;
 }
 
-void setMode(int newMode){
+void setMode(int newMode, bool indicator){
   transitionWaitTime = 0;
   randomized = false;
   mode = newMode;
@@ -1406,7 +1412,8 @@ void setMode(int newMode){
   }
   
   // Light up an LED in the mode position as an indicator.
-  showModeOnStrip(strip.Color(100, 100, 0), mode, PATTERN_RANDOM, randomized);
+  if(indicator)
+    showModeOnStrip(strip.Color(100, 100, 0), mode, PATTERN_RANDOM, randomized);
   
   // Set parameters for the mode.
   setParameters();
@@ -1501,14 +1508,17 @@ bool changeFreqCutMode(int incr){
 }
 
 void switchLampMode(){
+  strip.clear();
   if(mode != PATTERN_LAMP){
     lastMode = mode;//saved the current mode
     mode = PATTERN_LAMP;
+    setParameters();
+    lampAge = 0;
   }
   else{
     mode = lastMode;
   }
-  setMode(mode);
+  setMode(mode, false); //without mode indication
 }
 
 void showModeOnStrip(uint32_t color, uint8_t num, uint8_t maxNum, bool all){
@@ -1627,7 +1637,9 @@ void showMirage(bool mirror){
 
 void showLamp(){
   uint32_t color;
-  color = adjustBrightness(LAMP_COLOR, lightBrightnessScale);
+  if(lampAge < MAX_AGE)lampAge++;
+  float ageScale = (float)lampAge / (float)MAX_AGE;
+  color = adjustBrightness(LAMP_COLOR, ageScale*lightBrightnessScale);
   for (i = 0; i < N_LEDS; i++)
     strip.setPixelColor(i, color);
 }
