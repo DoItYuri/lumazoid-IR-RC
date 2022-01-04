@@ -40,7 +40,7 @@
 #include "IRLremote.h"
 
 //#define DEBUG
-#define N_LEDS            94 //max 210, Nano has not enough memory to process more
+#define N_LEDS            94 //max 200, Nano has not enough memory to process more
 #define ADC_CHANNEL       1  //A1 - input
 #define BACKGROUND        ((uint32_t) 0x000000) //background color
 #define LAMP_COLOR        ((uint32_t) 0x646464) //light color
@@ -110,8 +110,10 @@
 #define PATTERN_COLOR_BARS3                   8
 #define PATTERN_FLASHBULBS                    9
 #define PATTERN_FIREFLIES                     10
-#define PATTERN_RANDOM                        11
-#define N_MODES                               12
+#define PATTERN_MIRAGE                        11
+#define PATTERN_MIRAGE_MIRROR                 12
+#define PATTERN_RANDOM                        13
+#define N_MODES                               14
 #define PATTERN_LAMP                          N_MODES
 
 #define COLOR_RANDOM      0 //colors are random
@@ -147,7 +149,7 @@ uint8_t colorIndex = 0;
 uint8_t randColor[] = {0, 0};
 uint8_t randColorCount[] = {0, 0};
 uint8_t randColorChangeParm = 10;
-uint8_t MAX_AGE = 0;
+uint16_t MAX_AGE = 0;
 uint16_t parm = 1000;
 uint16_t lastParm=0;
 uint8_t colorBars[MAX_COLOR_BARS];
@@ -190,17 +192,19 @@ int16_t level, sum;
 
 const uint8_t PROGMEM noiseFloor[64] = {8, 6, 6, 5, 3, 4, 4, 4, 3, 4, 4, 3, 2, 3, 3, 4, 2, 1, 2, 1, 3, 2, 3, 2, 1, 2, 3, 1, 2, 3, 4, 4, 3, 2, 2, 2, 2, 2, 2, 1, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 4};
 const uint8_t PROGMEM eq[64] = {255, 175, 218, 225, 220, 198, 147, 99, 68, 47, 33, 22, 14, 8, 4, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-const uint8_t PROGMEM bandBinCounts[] = {2, 4, 5, 8, 11, 17, 25, 37};
-const uint8_t PROGMEM bandBinStarts[] = {1, 1, 2, 3, 5, 7, 11, 16};
+//const uint8_t PROGMEM bandBinCounts[] = {2, 4, 5, 8, 11, 17, 25, 37};
+const uint8_t PROGMEM bandBinCounts[] = {2, 17, 25, 11, 8, 4, 5, 37};
+//const uint8_t PROGMEM bandBinStarts[] = {1, 1, 2, 3, 5, 7, 11, 16};
+const uint8_t PROGMEM bandBinStarts[] = {1, 7, 11, 5, 3, 1, 2, 16};
 const uint8_t PROGMEM band0weights[] = {181, 40}; //red
 const uint8_t PROGMEM band1weights[] = {19, 186, 38, 2}; //orange
-const uint8_t PROGMEM band2weights[] = {11, 176, 118, 16, 1}; //yellow
-const uint8_t PROGMEM band3weights[] = {5, 55, 165, 164, 71, 18, 4, 1}; //green
-const uint8_t PROGMEM band4weights[] = {3, 24, 89, 139, 148, 118, 54, 20, 6, 2, 1}; //cyan
-const uint8_t PROGMEM band5weights[] = {2, 9, 29, 70, 125, 172, 185, 162, 118, 74, 41, 21, 10, 5, 2, 1, 1}; //blue
-const uint8_t PROGMEM band6weights[] = {1, 4, 11, 25, 49, 83, 121, 156, 180, 185, 174, 149, 118, 87, 60, 40, 25, 16, 10, 6, 4, 2, 1, 1, 1}; //magenta
+const uint8_t PROGMEM band2weights[] = {11, 176, 118, 16, 1}; //magenta
+const uint8_t PROGMEM band3weights[] = {5, 55, 165, 164, 71, 18, 4, 1}; //cyan
+const uint8_t PROGMEM band4weights[] = {3, 24, 89, 139, 148, 118, 54, 20, 6, 2, 1}; //blue
+const uint8_t PROGMEM band5weights[] = {2, 9, 29, 90, 125, 172, 185, 162, 154, 118, 94, 41, 21, 10, 5, 2, 1, 1}; //green
+const uint8_t PROGMEM band6weights[] = {1, 4, 11, 25, 49, 83, 121, 156, 180, 185, 174, 149, 118, 87, 60, 40, 25, 16, 10, 6, 4, 2, 1, 1, 1}; //yellow
 const uint8_t PROGMEM band7weights[] = {1, 2, 5, 10, 18, 30, 46, 67, 92, 118, 143, 164, 179, 185, 184, 174, 158, 139, 118, 97, 77, 60, 45, 34, 25, 18, 13, 9, 7, 5, 3, 2, 2, 1, 1, 1, 1}; //white
-const uint8_t PROGMEM * const bandWeights[] = {band0weights, band1weights, band2weights, band3weights, band4weights, band5weights, band6weights, band7weights};
+const uint8_t PROGMEM * const bandWeights[] = {band0weights, band5weights, band6weights, band4weights, band3weights, band1weights, band2weights, band7weights};
 
 void setup() {
 #ifdef DEBUG
@@ -323,7 +327,7 @@ void ir_loop(){
           delaySize = 0; //no delay needed
           break;
         case IR_CMD_MODE_0:
-          setMode(PATTERN_PULSE);
+          setMode(PATTERN_MIRAGE);
           break;
         case IR_CMD_MODE_1:
           setMode(PATTERN_DANCE_PARTY);
@@ -356,7 +360,7 @@ void ir_loop(){
           setMode(PATTERN_RANDOM);
           break;
         case IR_CMD_ONE_RAND:
-          setMode(random(PATTERN_RANDOM));
+          setMode(chooseRandomPattern());
           break;
         case IR_CMD_EQ:
           changeFreqCutMode(1);
@@ -476,13 +480,13 @@ void loop() {
           // Initialize the structure.
           peaks[peakIndex].age = 0;
           peaks[peakIndex].rnd = random(255); // a random component for a visualzation to use. For example, to shift the color a bit.
-          if (colorMode == COLOR_BAND || colorMode == COLOR_PURE_BAND) {
+          if (colorMode == COLOR_BAND || colorMode == COLOR_PURE_BAND || pattern == PATTERN_MIRAGE || pattern == PATTERN_MIRAGE_MIRROR) {
             peaks[peakIndex].baseColor = i * 32;
           }
-          if (colorMode == COLOR_RANDOM) {
+          else if (colorMode == COLOR_RANDOM) {
             peaks[peakIndex].baseColor = getRandomBaseColor(peaks[peakIndex].rnd);
           }
-          if (colorMode == COLOR_CYCLE) {
+          else if (colorMode == COLOR_CYCLE) {
             peaks[peakIndex].baseColor = colorIndex;
           }
           peaks[peakIndex].magnitude = magnitude;
@@ -797,6 +801,16 @@ void doVisualization() {
     return;
   }
 
+  if (pattern == PATTERN_MIRAGE){
+    showMirage(false);
+    return;
+  }
+
+  if (pattern == PATTERN_MIRAGE_MIRROR){
+    showMirage(true);
+    return;
+  }
+  
   // Visual peaks are assigned one of 15 color bars.
   if ((pattern == PATTERN_COLOR_BARS) || (pattern == PATTERN_COLOR_BARS2) || (pattern == PATTERN_COLOR_BARS3)) {
     uint8_t k = 0;
@@ -1069,7 +1083,11 @@ void setParameters() {
     case PATTERN_COLOR_BARS3:
       MAX_AGE = 15;
       break;
-  }
+    case PATTERN_MIRAGE:
+    case PATTERN_MIRAGE_MIRROR:
+      MAX_AGE = 15;
+      break;
+   }
 
   if (colorMode == COLOR_CYCLE) {
     colorIndexIncFreq = map(parm, 0, 1024, 20, 0);
@@ -1128,7 +1146,7 @@ uint32_t getColor(uint8_t index, uint8_t rnd) {
       g = f >> 1;
       b = 0;
       break;
-    case 1: // orange
+    case 5: // orange
       r = 255;
       g = 127 + (f >> 1);
       b = 0;
@@ -1138,7 +1156,7 @@ uint32_t getColor(uint8_t index, uint8_t rnd) {
       g = 255;
       b = 0;
       break;
-    case 3: // green
+    case 1: // green
       r = 0;
       g = 255;
       b = f;
@@ -1148,7 +1166,7 @@ uint32_t getColor(uint8_t index, uint8_t rnd) {
       g = 255 - f;
       b = 255;
       break;
-    case 5: // blue
+    case 3: // blue
       r = f;
       g = 0;
       b = 255;
@@ -1499,5 +1517,95 @@ void showBandsOnStrip(){
   }
   strip.show();
   colorMode = tmpColorMode;
+}
+
+void showMirage(bool mirror){
+  float ageScale;
+  uint32_t color;
+  //uint8_t r;
+  bool Silence = true;
+  uint8_t k = 0;
+  uint8_t nbars = mirror ? cutoffFreqBand*2-1 : cutoffFreqBand;
+
+  for (i = 0; i < cutoffFreqBand; i++) {
+
+    if ((peaks[i].magnitude > 0))
+      Silence = false;
+    
+    if ((peaks[i].magnitude > 0) && (peaks[i].age == 0)) {
+      // New peak (age == 0).
+      k = peaks[i].baseColor/32;
+      if(mirror){
+        colorBars[cutoffFreqBand-1 - k] = i;
+        colorBars[cutoffFreqBand-1 + k] = i;
+      }
+      else{
+        colorBars[k] = i;
+      }
+    }
+  }
+
+  uint8_t maxWidth = N_LEDS / nbars;
+  uint8_t width;
+  for (i = 0; i < nbars; i++) {
+    j = colorBars[i];
+    if (j == UNUSED) continue;
+    if (peaks[j].age == 0) {
+      // If peak is brand new, make it max brightness!
+      ageScale = 1.0;
+    } else {
+      // Otherwise, in range [0.0,0.5] as function of age.
+      ageScale = 0.5 * (float)(1.0 - ((float)peaks[j].age / (float)MAX_AGE));
+    }
+
+    //color = adjustBrightness(getColor(peaks[j].baseColor, peaks[j].rnd), ageScale);
+    color = adjustBrightness(getColor(peaks[j].baseColor, 0), ageScale);
+    if (peaks[j].age == MAX_AGE) {
+      // mark the assigned color bar as unused.
+      colorBars[i] = UNUSED;
+    }
+
+    if (pattern != PATTERN_MIRAGE) {
+      width = maxWidth;
+    } else {
+      // Width is function of age.
+      if (peaks[j].age < 5) {
+        // If young, force to max width
+        width = maxWidth;
+      } else {
+        // Then shrink based on age.
+        width = map(peaks[j].age - 5, 0, MAX_AGE - 4, maxWidth, 1);
+        width -= width % 2; // force width to be multiple of 2
+      }
+    }
+
+    for (j = 0; j < (width / 2); j++) {
+      // Adjust brightness based on how far LED is from "center" of the bar.
+      // Brighter at center, dimmer outside.
+      color = adjustBrightness(color, (float)(1.0 - (float)((j * 2) / width)));
+
+      k = (i * maxWidth) + ((maxWidth / 2) - 1 - j);
+      strip.setPixelColor(k % N_LEDS, color);
+      k = k + 1 + (j * 2);
+      strip.setPixelColor(k % N_LEDS, color);
+    }
+
+  }
+
+  // Age all the peaks.
+  for (i = 0; i < N_PEAKS; i++) {
+    if (peaks[i].magnitude > 0) {
+      peaks[i].age++;
+      if (peaks[i].age > MAX_AGE) {
+        peaks[i].magnitude = 0;
+      }
+    }
+  }
+
+  if (Silence)
+  {
+    for (i = 0; i < N_LEDS; i++)
+      strip.setPixelColor(i, BACKGROUND);
+  }
 
 }
