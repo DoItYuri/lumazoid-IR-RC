@@ -192,16 +192,14 @@ int16_t level, sum;
 
 const uint8_t PROGMEM noiseFloor[64] = {8, 6, 6, 5, 3, 4, 4, 4, 3, 4, 4, 3, 2, 3, 3, 4, 2, 1, 2, 1, 3, 2, 3, 2, 1, 2, 3, 1, 2, 3, 4, 4, 3, 2, 2, 2, 2, 2, 2, 1, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 4};
 const uint8_t PROGMEM eq[64] = {255, 175, 218, 225, 220, 198, 147, 99, 68, 47, 33, 22, 14, 8, 4, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-//const uint8_t PROGMEM bandBinCounts[] = {2, 4, 5, 8, 11, 17, 25, 37};
 const uint8_t PROGMEM bandBinCounts[] = {2, 17, 25, 11, 8, 4, 5, 37};
-//const uint8_t PROGMEM bandBinStarts[] = {1, 1, 2, 3, 5, 7, 11, 16};
 const uint8_t PROGMEM bandBinStarts[] = {1, 7, 11, 5, 3, 1, 2, 16};
 const uint8_t PROGMEM band0weights[] = {181, 40}; //red
 const uint8_t PROGMEM band1weights[] = {19, 186, 38, 2}; //orange
 const uint8_t PROGMEM band2weights[] = {11, 176, 118, 16, 1}; //magenta
 const uint8_t PROGMEM band3weights[] = {5, 55, 165, 164, 71, 18, 4, 1}; //cyan
 const uint8_t PROGMEM band4weights[] = {3, 24, 89, 139, 148, 118, 54, 20, 6, 2, 1}; //blue
-const uint8_t PROGMEM band5weights[] = {2, 9, 29, 90, 125, 172, 185, 162, 154, 118, 94, 41, 21, 10, 5, 2, 1, 1}; //green
+const uint8_t PROGMEM band5weights[] = {2, 9, 29, 70, 125, 172, 185, 162, 118, 44, 41, 21, 10, 5, 2, 1, 1}; //green
 const uint8_t PROGMEM band6weights[] = {1, 4, 11, 25, 49, 83, 121, 156, 180, 185, 174, 149, 118, 87, 60, 40, 25, 16, 10, 6, 4, 2, 1, 1, 1}; //yellow
 const uint8_t PROGMEM band7weights[] = {1, 2, 5, 10, 18, 30, 46, 67, 92, 118, 143, 164, 179, 185, 184, 174, 158, 139, 118, 97, 77, 60, 45, 34, 25, 18, 13, 9, 7, 5, 3, 2, 2, 1, 1, 1, 1}; //white
 const uint8_t PROGMEM * const bandWeights[] = {band0weights, band5weights, band6weights, band4weights, band3weights, band1weights, band2weights, band7weights};
@@ -313,10 +311,22 @@ void ir_loop(){
           led = changeMode(1) ? SINLE_BLINK : MULTI_BLINK;
           break;
         case IR_CMD_BRIGHT_DEC:
-          led = ((pattern == PATTERN_LAMP) ? changeLampBrightness(-1) : changeBrightness(-1)) ? SINLE_BLINK : MULTI_BLINK;
+          if(pattern == PATTERN_LAMP){
+            led = changeLampBrightness(-1) ? SINLE_BLINK : MULTI_BLINK;
+            delaySize = 0; //no delay needed
+          }
+          else{
+            led = changeBrightness(-1) ? SINLE_BLINK : MULTI_BLINK;
+          }
           break;
         case IR_CMD_BRIGHT_INC:
-          led = ((pattern == PATTERN_LAMP) ? changeLampBrightness(1) : changeBrightness(1)) ? SINLE_BLINK : MULTI_BLINK;
+          if(pattern == PATTERN_LAMP){
+            led = changeLampBrightness(1) ? SINLE_BLINK : MULTI_BLINK;
+            delaySize = 0; //no delay needed
+          }
+          else{
+            led = changeBrightness(1) ? SINLE_BLINK : MULTI_BLINK;
+          }
           break;
         case IR_CMD_PARM_DEC:
           led = changeParm(-1) ? NO_BLINKING : MULTI_BLINK;
@@ -579,9 +589,7 @@ void doVisualization() {
   bool Silence = true;
 
   if (pattern == PATTERN_LAMP){
-    color = adjustBrightness(LAMP_COLOR, lightBrightnessScale);
-    for (i = 0; i < N_LEDS; i++)
-      strip.setPixelColor(i, color);
+    showLamp();
     return;
   }
   
@@ -1452,6 +1460,8 @@ bool changeLampBrightness(int incr){
   lightBrightnessScale = maxLightBrightness / 255.0;
   // Set parameters for the mode.
   setParameters();
+  showLamp();
+  strip.show();
   saveConfig();
   return result;
 }
@@ -1607,5 +1617,11 @@ void showMirage(bool mirror){
     for (i = 0; i < N_LEDS; i++)
       strip.setPixelColor(i, BACKGROUND);
   }
+}
 
+void showLamp(){
+  uint32_t color;
+  color = adjustBrightness(LAMP_COLOR, lightBrightnessScale);
+  for (i = 0; i < N_LEDS; i++)
+    strip.setPixelColor(i, color);
 }
