@@ -827,8 +827,14 @@ void doVisualization() {
     uint8_t k = 0;
     uint8_t oldest;
     uint8_t nbars = 20;
-
-    if(pattern == PATTERN_COLOR_BARS3) nbars =10;
+    if (N_LEDS>150) nbars = N_PEAKS;
+    else if (N_LEDS>120) nbars = 16;
+    else if (N_LEDS>60) nbars = 12;
+    else if (N_LEDS>20) nbars = 6;
+    else if (N_LEDS>10) nbars = N_LEDS/3;
+    else nbars = 2;
+    
+    if(pattern == PATTERN_COLOR_BARS3) nbars /= 2;
     
     for (i = 0; i < N_PEAKS; i++) {
 
@@ -1523,14 +1529,15 @@ void switchLampMode(){
 
 void showModeOnStrip(uint32_t color, uint8_t num, uint8_t maxNum, bool all){
   uint32_t darkColor = adjustBrightness(color, 0.05);
+  uint8_t m = (N_LEDS < (maxNum * 2)) ? 1 : 2;
   strip.clear();
-  for(int i=0; i<maxNum; i++){
+  for(int i=0; i < maxNum; i++){
       if(i == num || all)
-        strip.setPixelColor(i*2, color);
+        strip.setPixelColor(i*m, color);
       else if(i < num)
-        strip.setPixelColor(i*2, darkColor);
+        strip.setPixelColor(i*m, darkColor);
       else
-        strip.setPixelColor(i*2, darkColor);
+        strip.setPixelColor(i*m, darkColor);
    }
    strip.show();
 }
@@ -1538,10 +1545,11 @@ void showModeOnStrip(uint32_t color, uint8_t num, uint8_t maxNum, bool all){
 void showBandsOnStrip(){
   // show bands to adjusting cutoff frequency band
   uint8_t tmpColorMode = colorMode;
+  uint8_t m = (N_LEDS < (N_BANDS * 2)) ? 1 : 2;
   colorMode = COLOR_BAND; //change mode to let getColor() return colors for the bands
   strip.clear();
   for (i = 0; i < cutoffFreqBand; i++) {
-    strip.setPixelColor(i*2, getColor(i * 32, 0));
+    strip.setPixelColor(i*m, getColor(i * 32, 0));
   }
   strip.show();
   colorMode = tmpColorMode;
