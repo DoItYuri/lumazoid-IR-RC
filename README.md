@@ -29,7 +29,7 @@ Visualization modes:
 - Light bar (whole strip blinking, stroboscope)
 - Color bars (multiple bars of fixed width)
 - Color bars 2 (multiple bars of variable width)
-- Color bars (several bars of variable width, wider than previous)
+- Color bars 3 (several bars of variable width, wider than previous)
 - Flashbulbs (flashing dots)
 - Fireflies (moving dots)
 - Mirage (bars in fixed positions, one for each band)

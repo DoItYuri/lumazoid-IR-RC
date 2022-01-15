@@ -827,7 +827,7 @@ void doVisualization() {
     uint8_t k = 0;
     uint8_t oldest;
     uint8_t nbars = 20;
-    if (N_LEDS>150) nbars = N_PEAKS;
+    if (N_LEDS>150) nbars = 20;
     else if (N_LEDS>120) nbars = 16;
     else if (N_LEDS>60) nbars = 12;
     else if (N_LEDS>20) nbars = 6;
