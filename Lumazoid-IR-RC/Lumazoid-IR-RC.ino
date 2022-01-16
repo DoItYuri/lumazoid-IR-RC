@@ -51,6 +51,7 @@
 #define REF_POT_GND       A0
 #define IR_RECEIVE_PIN    2
 
+#define RC_ADDR           0xFF00
 #define RC_BTN_ON_OFF     0x45
 #define RC_BTN_STOP       0x46
 #define RC_BTN_MUTE       0x47
@@ -282,7 +283,7 @@ void ir_loop_off(){
   if (IRLremote.available()) {
     // Get the new data from the remote
     auto data = IRLremote.read();
-    if(data.command != 0){ //process the received code
+    if(data.address == RC_ADDR && data.command != 0){ //process the received code
       switch(data.command){
         case IR_CMD_ON_OFF:
           off = false;
@@ -299,7 +300,7 @@ void ir_loop(){
     unsigned int delaySize = RC_DELAY; //delay, to see the indication on the strip
     // Get the new data from the remote
     auto data = IRLremote.read();
-    if(data.command != 0){ //process the received code
+    if(data.address == RC_ADDR && data.command != 0){ //process the received code
       lastRcCmd = data.command;
       switch(lastRcCmd){
         case IR_CMD_ON_OFF:
